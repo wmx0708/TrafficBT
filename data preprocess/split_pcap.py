@@ -6,9 +6,13 @@ from multiprocessing import Pool
 from collections import defaultdict
 from tqdm import tqdm
 
-#本文件用于提取创建流量图数据的pcap数据，数据格式为字典，{label:[[(payload\packet_length,time,direction)],[...],[...]]}每个键是标签，值是一个列表，每个列表的元素是一个session中的十个数据包的数据，每个数据包的数据是一个元组，元组包含payload\\packet_length,time,direction共三个元素，最终将所得字典存储于json文件中
-#对pcap数据分流
+# This file is used to extract pcap data for creating traffic graph data. The data format is a dictionary:
+# {label: [[(payload/packet_length, time, direction)], [...], [...]]}. Each key is a label, and the value is a list.
+# Each element in the list represents data from ten packets in a session. The data for each packet is a tuple
+# containing three elements: payload/packet_length, time, and direction.
+# The resulting dictionary is finally stored in a JSON file.
 
+# Split pcap data into sessions
 def pcapng_to_pcap(pcap_path):
     if pcap_path.endswith("pcapng"):
         cmd2 = f"editcap -F pcap {pcap_path} {pcap_path[:-7]}.pcap"
@@ -18,7 +22,7 @@ def pcapng_to_pcap(pcap_path):
     else:
         pcap_name = pcap_path.split("\\")[-1]
         cmd1 = f"ren {pcap_path} {pcap_name[:-5]}_pcapng.pcap"
-        os.system(cmd1)  # 执行分流命令
+        os.system(cmd1)
         cmd2 = f"editcap -F pcap {pcap_path[:-5]}_pcapng.pcap {pcap_path}"
         os.system(cmd2)
         cmd3 = f"del {pcap_path[:-5]}_pcapng.pcap"
@@ -27,34 +31,34 @@ def pcapng_to_pcap(pcap_path):
 
 def split_pcap(pcap_path,directory):
     session_dir = directory + "splitcap\\" + pcap_path.removesuffix(".pcap").removeprefix(directory)
-    # 分流命令
+    # Splitting command
     cmd = f"SplitCap.exe -r {pcap_path} -s session -o {session_dir}"
     os.system(cmd)
     print(f"Split processed: {pcap_path}")
 
 def multicpu_split_pcap(directory, cpu_count=61):
-    """ 使用多进程处理 pcap 文件 """
+    """ Use multiprocessing to process pcap files """
     pcap_files = []
 
-    # 遍历目录，收集所有 pcap 文件路径
+    # Traverse the directory and collect all pcap file paths
     for dirpath, _, filenames in os.walk(directory):
         for filename in filenames:
-            if filename.endswith(".pcap"):  # 仅处理 .pcap 文件
+            if filename.endswith(".pcap"):  # Process only .pcap files
                 pcap_files.append(os.path.join(dirpath, filename))
 
-    # 创建进程池并并行执行
-    #如果分流出现报错‘System.IO.InvalidDataException: The stream is not a PCAP file. Magic number is A0D0D0A or A0D0D0A but should be A1B2C3D4.’可以使用file xxx.pcap查看pcap文件类型是否为pcapng格式，若是，使用下列函数
+    # If an error 'System.IO.InvalidDataException: The stream is not a PCAP file...' occurs,
+    # it might be a pcapng file. Use the following function to convert it.
     with Pool(processes=cpu_count) as pool:
         list(tqdm(pool.imap(pcapng_to_pcap, pcap_files), total=len(pcap_files), desc="Converting PCAPNG to PCAP"))
         # pool.map(pcapng_to_pcap, [pcap for pcap in pcap_files])
 
-    # 创建进程池并并行执行
+    # Create a process pool and execute in parallel
     with Pool(processes=cpu_count) as pool:
         list(tqdm(pool.starmap(split_pcap, [(pcap, directory) for pcap in pcap_files]), total=len(pcap_files),
                   desc="Splitting PCAP files"))
 if __name__=="__main__":
 
-    # 源数据路径
+    # Source data path
     # data_path = "D:\\USTC-TFC2016-master\\Benign\\"
     # data_path = "D:\\USTC-TFC2016-master\\Malware\\"
     # data_path = "D:\\ISCX-VPN-Service\\VPN\\"
@@ -85,7 +89,5 @@ if __name__=="__main__":
     ]
     for data_path in datapath_list:
         split_directory=data_path+"splitcap\\"
-        #将源数据分流
+        # Split the source data
         multicpu_split_pcap(data_path,cpu_count=61)
-
-
