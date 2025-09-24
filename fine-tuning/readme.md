@@ -1,3 +1,10 @@
+Just keep main.py, models.py, trainer.py, and data.py in the same directory, then simply run:
+
+python main.py --ServiceVPN to start the program.
+
+--ServiceVPN specifies the dataset to be used for the experiment.
+You can replace it with the name of your own dataset.
+
 # main.py
 
 (1) **tokenizer_path** the **bert_tokenizer_path** in pre-training readme. 
@@ -10,4 +17,5 @@ Modify all the path to include your own directory paths and justify the paramete
 or **trans_max_epoch**.
 
 the args below represents the datapath, change you own args you need.
-run like "python main.py --Servicevpn"
+
+run like "python main.py --ServiceVPN"
