@@ -1,4 +1,4 @@
-#  1. 导入依赖模块
+# 1. Import dependencies
 import binascii
 from scapy.all import rdpcap, Raw
 import multiprocessing
@@ -15,11 +15,11 @@ from sklearn.preprocessing import StandardScaler,OneHotEncoder,MinMaxScaler
 from tqdm import tqdm
 from sklearn.preprocessing import LabelEncoder
 
-# ==== 流统计特征 ====
+# ==== Flow Statistical Feature Extraction Functions ====
 def calculate_iat(timestamps):
-    """计算时间间隔（IAT）的统计特征"""
+    """Calculate statistical features for Inter-Arrival Time (IAT)"""
     if len(timestamps) < 2:
-        return (0, 0, 0, 0)  # 返回长度为 4 的元组
+        return (0, 0, 0, 0)  # Returns a tuple of length 4
     iats = [timestamps[i + 1] - timestamps[i] for i in range(len(timestamps) - 1)]
     return (
         sum(iats) / len(iats),  # Mean
@@ -31,7 +31,7 @@ def calculate_iat(timestamps):
 
 
 def calculate_packet_stats(lengths):
-    """计算包长度的统计特征"""
+    """Calculate statistical features for packet lengths"""
     if not lengths:
         return (0, 0, 0, 0, 0)
     return (
@@ -42,7 +42,7 @@ def calculate_packet_stats(lengths):
         statistics.variance(lengths) if len(lengths) > 1 else 0  # Variance
     )
 
-# ==== 包特征特征计算函数部分 ====
+# ==== Packet Feature Calculation Functions ====
 def calculate_entropy(data):
     if not data:
         return 0
@@ -82,7 +82,7 @@ def byte_pair_corr(data):
         return 0
     return np.corrcoef(a, b)[0, 1]
 
-# ==== TLS解析辅助函数（简化版） ====
+# ==== TLS Parsing Helper Functions ====
 def parse_tls(packet):
     tls_info = {"tls_record_type": -1, "tls_version": -1, "cipher_suite_len": -1, "handshake_phase": 0, "is_handshake": False}
     if not packet.haslayer(Raw):
@@ -107,21 +107,21 @@ def parse_tls(packet):
     return tls_info
 
 
-# ==== 时间特征标准化函数 ====
+# ==== Time Feature Normalization Functions ====
 def normalize_timestamp(timestamps):
-    """时间戳标准化（修复numpy与Decimal冲突问题）"""
-    # 转换为原生Python float类型
+    """Normalize timestamps (fixes numpy and Decimal conflict issue)"""
+    # Convert to native Python float type
     timestamps_float = [float(ts) for ts in timestamps]
 
-    # 计算时间范围
+    # Calculate time range
     min_ts = min(timestamps_float)
     max_ts = max(timestamps_float)
-    duration = max_ts - min_ts if max_ts > min_ts else 1.0  # 防止除零
+    duration = max_ts - min_ts if max_ts > min_ts else 1.0  # Prevent division by zero
 
-    # 归一化处理
+    # Normalization process
     return [(ts - min_ts) / duration for ts in timestamps_float]
 
- # === payload 转化成bigram形式的payload ===
+ # === Convert payload to bigram format ===
 def cut(obj, sec):
     result = [obj[i:i+sec] for i in range(0,len(obj),sec)]
     remanent_count = len(result[0])%4
@@ -151,13 +151,13 @@ def bigram_generation(packet_string,flag=False):
 
     return result
 
-# === 流统计特征提取函数 ===
+# === Flow Statistical Feature Extraction Function ===
 def extract_all_features(packets):
-    """主函数：从PCAP文件中提取特征"""
+    """Main function: Extract features from a PCAP file"""
     if not packets:
         return {"stat_features": None}
 
-    # 初始化统计变量
+    # Initialize statistical variables
     tcp_flags = defaultdict(int)
     fwd_packets = []
     bwd_packets = []
@@ -167,55 +167,55 @@ def extract_all_features(packets):
         'A': 0x10, 'U': 0x20, 'C': 0x80, 'E': 0x40
     }
 
-    # 确定流方向（以第一个包为基准）
+    # Determine flow direction (based on the first packet)
     first_pkt = packets[0]
     src_ip = first_pkt[IP].src
     dst_ip = first_pkt[IP].dst
     sport = first_pkt[TCP].sport if TCP in first_pkt else first_pkt[UDP].sport
     dport = first_pkt[TCP].dport if TCP in first_pkt else first_pkt[UDP].dport
 
-    # 处理所有包
+    # Process all packets
     for pkt in packets:
         if IP not in pkt:
             continue
 
-        # 记录TCP标志位
+        # Record TCP flags
         if TCP in pkt:
             flags = pkt[TCP].flags
             for flag, mask in flag_masks.items():
                 if flags & mask:
                     tcp_flags[flag] += 1
 
-        # 确定包方向并记录
+        # Determine packet direction and record
         pkt_length = len(pkt)
         timestamp = float(pkt.time)
-        if (pkt[IP].src, sport) == (src_ip, sport):  # 前向包
+        if (pkt[IP].src, sport) == (src_ip, sport):  # Forward packet
             fwd_packets.append((timestamp, pkt_length))
-        else:  # 后向包
+        else:  # Backward packet
             bwd_packets.append((timestamp, pkt_length))
         all_packets.append((timestamp, pkt_length))
 
-    # 按时间排序
+    # Sort by time
     all_packets.sort(key=lambda x: x[0])
     if not all_packets:
         return {"stat_features": None}
 
-    # 计算基础特征
+    # Calculate basic features
     start_time = all_packets[0][0]
     end_time = all_packets[-1][0]
-    flow_duration = (end_time - start_time) * 1e6  # 微秒
+    flow_duration = (end_time - start_time) * 1e6  # microseconds
 
-    # 包长度统计
+    # Packet length statistics
     fwd_lengths = [p[1] for p in fwd_packets]
     bwd_lengths = [p[1] for p in bwd_packets]
     all_lengths = [p[1] for p in all_packets]
 
-    # 时间间隔统计
+    # Inter-arrival time statistics
     fwd_times = [p[0] for p in fwd_packets]
     bwd_times = [p[0] for p in bwd_packets]
     all_times = [p[0] for p in all_packets]
 
-    # 计算统计量（假设这些函数已定义）
+    # Calculate statistics (assuming these functions are defined)
     fwd_stats = calculate_packet_stats(fwd_lengths)
     bwd_stats = calculate_packet_stats(bwd_lengths)
     all_stats = calculate_packet_stats(all_lengths)
@@ -224,53 +224,53 @@ def extract_all_features(packets):
     all_iat = calculate_iat(all_times)
 
 
-    # 构建特征字典
+    # Build feature dictionary
     features = {}
 
-    # 基础信息
+    # Basic information
     features['Flow Duration'] = flow_duration
     features['total Fwd Packet'] = len(fwd_packets)
     features['total Bwd packets'] = len(bwd_packets)
     features['total Length of Fwd Packet'] = sum(fwd_lengths)
     features['total Length of Bwd Packet'] = sum(bwd_lengths)
 
-    # 前向包统计
+    # Forward packet statistics
     features['Fwd Packet Length Min'] = fwd_stats[0]
     features['Fwd Packet Length Max'] = fwd_stats[1]
     features['Fwd Packet Length Mean'] = fwd_stats[2]
     features['Fwd Packet Length Std'] = fwd_stats[3]
 
-    # 后向包统计
+    # Backward packet statistics
     features['Bwd Packet Length Min'] = bwd_stats[0]
     features['Bwd Packet Length Max'] = bwd_stats[1]
     features['Bwd Packet Length Mean'] = bwd_stats[2]
     features['Bwd Packet Length Std'] = bwd_stats[3]
 
-    # 流量速率
+    # Flow rate
     features['Flow Bytes/s'] = (sum(all_lengths) / flow_duration) * 1e6 if flow_duration > 0 else 0
     features['Flow Packets/s'] = (len(all_packets) / flow_duration) * 1e6 if flow_duration > 0 else 0
 
-    # IAT统计
+    # IAT statistics
     features['Flow IAT Mean'] = all_iat[0]
     features['Flow IAT Std'] = all_iat[1]
     features['Flow IAT Max'] = all_iat[2]
     features['Flow IAT Min'] = all_iat[3]
 
-    # 前向IAT
+    # Forward IAT
     features['Fwd IAT Mean']= fwd_iat[0]
     features['Fwd IAT Std']= fwd_iat[1] if len(fwd_iat) > 1 else 0
     features['Fwd IAT Max']= fwd_iat[2] if len(fwd_iat) > 2 else 0
     features['Fwd IAT Min']= fwd_iat[3] if len(fwd_iat) > 3 else 0
     features['Fwd IAT Total']= fwd_iat[4] if len(fwd_iat) > 4 else 0
 
-    # 后向IAT
+    # Backward IAT
     features['Bwd IAT Mean']= bwd_iat[0]
     features['Bwd IAT Std']= bwd_iat[1] if len(bwd_iat) > 1 else 0
     features['Bwd IAT Max']= bwd_iat[2] if len(bwd_iat) > 2 else 0
     features['Bwd IAT Min']= bwd_iat[3] if len(bwd_iat) > 3 else 0
     features['Bwd IAT Total']= bwd_iat[4] if len(bwd_iat) > 4 else 0
 
-    # TCP标志位
+    # TCP flags
     features['FIN Flag Count'] = tcp_flags.get('F', 0)
     features['SYN Flag Count'] = tcp_flags.get('S', 0)
     features['RST Flag Count'] = tcp_flags.get('R', 0)
@@ -280,7 +280,7 @@ def extract_all_features(packets):
     features['CWR Flag Count'] = tcp_flags.get('C', 0)
     features['ECE Flag Count'] = tcp_flags.get('E', 0)
 
-    # 全局包统计
+    # Global packet statistics
     features['Packet Length Min'] = all_stats[0]
     features['Packet Length Max'] = all_stats[1]
     features['Packet Length Mean'] = all_stats[2]
@@ -292,13 +292,13 @@ def extract_all_features(packets):
     }
 
 
-# ==== 包级特征提取函数 ====
+# ==== Packet-level Feature Extraction Function ====
 def extract_packet_features(packets):
     features = []
-    payloads = []  # 新增：存储前5个包的payload
+    payloads = []  # New: Store payloads of the first 5 packets
     pkt_lens, deltas, directions = deque(maxlen=5), deque(maxlen=5), deque(maxlen=5)
 
-    # 统一使用float类型处理时间戳
+    # Consistently use float type for timestamps
     start_time = float(packets[0].time)
     prev_time = start_time
     prev_seq = None
@@ -306,34 +306,34 @@ def extract_packet_features(packets):
     client_ip = packets[0][IP].src if IP in packets[0] else None
     key_update_count = 0
 
-    # 获取时间戳并标准化
+    # Get and normalize timestamps
     timestamps = [float(pkt.time) for pkt in packets]
     normalized_timestamps = normalize_timestamp(timestamps)
 
-    # 新增：提取前5个包的payload
-    for i in range(5):  # 确保只处理前5个包
+    # New: Extract payloads of the first 5 packets
+    for i in range(5):  # Ensure only the first 5 packets are processed
         pkt = packets[i]
         if bytes(pkt.payload):
             payload = binascii.hexlify(bytes(pkt.payload)).decode('utf-8')
             bigram_payload = bigram_generation(payload)
         payloads.append(bigram_payload)
 
-    # 处理所有包的特征（保持原逻辑）
+    # Process features for all packets (maintain original logic)
     for i, pkt in enumerate(packets):
         feat = {}
         if not pkt.haslayer(IP):
             continue
 
-    # 统一使用float类型处理时间戳
-    start_time = float(packets[0].time)  # 转换为Python float
+    # Consistently use float type for timestamps
+    start_time = float(packets[0].time)  # Convert to Python float
     prev_time = start_time
     prev_seq = None
     last_handshake_time = None
     client_ip = packets[0][IP].src if IP in packets[0] else None
     key_update_count = 0
 
-    # 获取时间戳并标准化
-    timestamps = [float(pkt.time) for pkt in packets]  # 显式转换为float
+    # Get and normalize timestamps
+    timestamps = [float(pkt.time) for pkt in packets]  # Explicitly convert to float
     normalized_timestamps = normalize_timestamp(timestamps)
 
     for i, pkt in enumerate(packets):
@@ -343,16 +343,16 @@ def extract_packet_features(packets):
 
         ip = pkt[IP]
 
-        # ==== 时间特征 ====
-        current_time = float(pkt.time)  # 确保为Python float
+        # ==== Time Features ====
+        current_time = float(pkt.time)  # Ensure it is a Python float
         feat["timestamp"] = normalized_timestamps[i]
         feat["delta_time"] = current_time - prev_time
-        feat["relative_time"] = current_time - start_time  # 直接使用float运算
+        feat["relative_time"] = current_time - start_time  # Use float operations directly
         prev_time = current_time
 
-        # ==== 长度与方向特征 ====
+        # ==== Length and Direction Features ====
         plen = len(pkt)
-        feat["packet_length"] = int(plen)  # 转换为Python int
+        feat["packet_length"] = int(plen)  # Convert to Python int
 
         payload_len = len(pkt[Raw].load) if pkt.haslayer(Raw) else 0
         feat["payload_length"] = int(payload_len)
@@ -361,18 +361,18 @@ def extract_packet_features(packets):
         feat["direction"] = int(direction)
         feat["is_ack_only"] = int(pkt.haslayer(TCP) and pkt[TCP].flags & 0x10 and payload_len == 0)
 
-        # ==== 协议特征 ====
-        feat["protocol_id"] = int(ip.proto)  # 转换为Python int
+        # ==== Protocol Features ====
+        feat["protocol_id"] = int(ip.proto)  # Convert to Python int
 
-        # ==== TCP特征 ====
+        # ==== TCP Features ====
         if pkt.haslayer(TCP):
             tcp = pkt[TCP]
-            flags = int(tcp.flags)  # 显式转换为int
+            flags = int(tcp.flags)  # Explicitly convert to int
             feat["tcp_flag_syn"] = int((flags & 0x02) != 0)
             feat["tcp_flag_ack"] = int((flags & 0x10) != 0)
             feat["tcp_flag_fin"] = int((flags & 0x01) != 0)
 
-            # 处理序列号差值
+            # Handle sequence number difference
             current_seq = int(tcp.seq)
             if prev_seq is not None:
                 feat["seq_diff"] = int(current_seq - prev_seq)
@@ -390,19 +390,19 @@ def extract_packet_features(packets):
                 "window_size": 0
             })
 
-        # ==== 滑动窗口统计 ====
+        # ==== Sliding Window Statistics ====
         pkt_lens.append(plen)
         deltas.append(feat["delta_time"])
         directions.append(direction)
 
-        # 转换为Python原生类型
+        # Convert to native Python types
         feat["avg_pkt_len_last_5"] = float(np.mean(pkt_lens))
         feat["avg_delta_time_last_5"] = float(np.mean(deltas))
         feat["std_pkt_len_last_5"] = float(np.std(pkt_lens)) if len(pkt_lens) >= 2 else 0.0
         feat["uplink_ratio_last_5"] = float(
             sum(1 for d in directions if d == 1) / len(directions)) if directions else 0.0
 
-        # ==== 加密特征 ====
+        # ==== Encryption Features ====
         raw_data = bytes(pkt[Raw].load) if pkt.haslayer(Raw) else b""
         feat["entropy"] = float(calculate_entropy(raw_data))
         feat["chi_square"] = float(chi_square(raw_data))
@@ -410,7 +410,7 @@ def extract_packet_features(packets):
         feat["null_byte_ratio"] = float(null_byte_ratio(raw_data))
         feat["byte_pair_corr"] = float(byte_pair_corr(raw_data))
 
-        # ==== TLS特征 ====
+        # ==== TLS Features ====
         tls_info = parse_tls(pkt)
         feat["tls_record_type"] = int(tls_info["tls_record_type"])
         feat["tls_version"] = int(tls_info["tls_version"])
@@ -429,7 +429,7 @@ def extract_packet_features(packets):
         if tls_info["is_handshake"]:
             last_handshake_time = current_time
 
-        # ==== 最终类型检查 ====
+        # ==== Final Type Check ====
         feat = {k: (float(v) if isinstance(v, (np.floating, float)) else
                     int(v) if isinstance(v, (np.integer, int)) else v)
                 for k, v in feat.items()}
@@ -438,17 +438,17 @@ def extract_packet_features(packets):
 
     return {
         "packet_features": features,
-        "packet_payloads": payloads  # 新增返回payloads
+        "packet_payloads": payloads  # New: return payloads
     }
 
-# === 提取流级特征和包级特征存入一个字典 ===
+# === Extract flow-level and packet-level features into a dictionary ===
 def extract_features(pcap_path):
     try:
         packets = rdpcap(pcap_path)
-        # 新增条件：如果包数量不足5个，直接返回None
+        # New condition: if packet count is less than 5, return None directly
         if len(packets) < 5:
             return None
-        # 获取 PCAP 文件所在目录的名称
+        # Get the directory name of the PCAP file
         label = os.path.basename(os.path.dirname(os.path.dirname(pcap_path)))
         packet_result = extract_packet_features(packets)
         stat_result = extract_all_features(packets)
@@ -456,7 +456,7 @@ def extract_features(pcap_path):
             "label": label,
             "stat_features": stat_result["stat_features"],
             "packet_features": packet_result["packet_features"],
-            "payloads": packet_result["packet_payloads"]  # 新增返回payloads
+            "payloads": packet_result["packet_payloads"]  # New: return payloads
         }
 
     except Exception as e:
@@ -464,22 +464,22 @@ def extract_features(pcap_path):
         return None
 
 
-# ==== 多进程主控部分 ====
+# ==== Multiprocessing Control Section ====
 def process_wrapper(args):
     pcap_path = args
     result = extract_features(pcap_path)
     if result is not None and result["stat_features"] != {} and result["packet_features"] != [] and result["payloads"] != []:
-        # 添加文件名信息用于后续关联
+        # Add filename information for later association
         result["filename"] = os.path.basename(pcap_path)
     return result
 
 
-# === 多进程提取特征 ===
+# === Multiprocessing Feature Extraction ===
 def main(root_dir, output_feature_jsonl, output_payload_jsonl, num_workers):
     pool = multiprocessing.Pool(processes=num_workers)
     tasks = []
 
-    # 任务收集逻辑保持不变
+    # Task collection logic remains unchanged
     for label in os.listdir(root_dir):
         label_dir = os.path.join(root_dir, label)
         if os.path.isdir(label_dir):
@@ -491,19 +491,19 @@ def main(root_dir, output_feature_jsonl, output_payload_jsonl, num_workers):
                             pcap_path = os.path.join(subdir_path, pcap_file)
                             tasks.append(pcap_path)
 
-    # 进度条处理保持不变
+    # Progress bar handling remains unchanged
     with tqdm(total=len(tasks), desc="Processing tasks") as pbar:
         results = []
         for result in pool.imap(process_wrapper, tasks):
-            if result:  # 自动过滤返回None的无效结果
+            if result:  # Automatically filter out invalid results (None)
                 results.append(result)
             pbar.update(1)
 
-    # === 双文件写入逻辑 ===
+    # === Dual File Writing Logic ===
     with open(output_feature_jsonl, 'w') as f_feature, \
             open(output_payload_jsonl, 'w') as f_payload:
         for result in results:
-            # 特征文件写入
+            # Feature file writing
             feature_entry = {
                 "filename": result["filename"],
                 "label": result["label"],
@@ -513,7 +513,7 @@ def main(root_dir, output_feature_jsonl, output_payload_jsonl, num_workers):
             json.dump(feature_entry, f_feature)
             f_feature.write('\n')
 
-            # Payload文件写入
+            # Payload file writing
             payload_entry = {
                 "filename": result["filename"],
                 "label": result["label"],
@@ -523,10 +523,10 @@ def main(root_dir, output_feature_jsonl, output_payload_jsonl, num_workers):
             f_payload.write('\n')
 
 # ----------------------
-# 数据加载
+# Data Loading
 # ----------------------
 def load_jsonl_data(file_path):
-    """加载JSONL数据，返回特征序列列表和标签列表"""
+    """Load JSONL data, return list of feature sequences and list of labels"""
     stat_features = []
     packet_sequenes = []
     all_labels = []
@@ -541,17 +541,17 @@ def load_jsonl_data(file_path):
     return stat_features,packet_sequenes, all_labels
 
 # ----------------------
-# 特征预处理标准化
+# Feature Preprocessing and Standardization
 # ----------------------
 
 def preprocess_time_steps(all_time_steps):
-    """预处理所有时间步特征（统一缩放到 [0,1]）"""
+    """Preprocess all time-step features (uniformly scale to [0,1])"""
     df = pd.DataFrame(all_time_steps)
 
-    # 1. 处理 cipher_suite_len
+    # 1. Process cipher_suite_len
     df['cipher_suite_len'] = df['cipher_suite_len'].clip(lower=0)
 
-    # 2. 处理数值特征（不再用 log 变换）
+    # 2. Process numeric features (no longer using log transform)
     numeric_features = [
         'delta_time', 'relative_time', 'avg_delta_time_last_5',
         'time_since_last_handshake', 'packet_length', 'payload_length',
@@ -560,27 +560,27 @@ def preprocess_time_steps(all_time_steps):
         'byte_pair_corr', 'window_size', 'seq_diff'
     ]
 
-    # 统一用 MinMaxScaler
-    scaler = MinMaxScaler(feature_range=(0, 1))  # 或 (-1, 1)
+    # Use MinMaxScaler consistently
+    scaler = MinMaxScaler(feature_range=(0, 1))  # or (-1, 1)
     df[numeric_features] = scaler.fit_transform(df[numeric_features])
 
-    # 3. 处理分类特征（用 OneHot 代替 factorize）
+    # 3. Process categorical features (using OneHot instead of factorize)
     tls_cat_features = ['tls_version', 'tls_record_type']
-    # 将编码后的特征合并到 DataFrame
-    print("处理分类特征为哑变量...")
+    # Merge encoded features into DataFrame
+    print("Processing categorical features into dummy variables...")
     for col in ['tls_version', 'tls_record_type']:
         df[col], _ = pd.factorize(df[col].astype(str))
 
-    # 检查 NaN
-    assert not df.isna().any().any(), "存在 NaN 值！"
+    # Check for NaN
+    assert not df.isna().any().any(), "NaN values exist!"
 
     return df.to_numpy(dtype=np.float32)
 
 # ----------------------
-# 序列填充（不足100的填充到100）
+# Sequence Padding (pad to 100 if less than 100)
 # ----------------------
 def pad_sequences(sequences, max_len=100):
-    """将变长序列填充到固定长度"""
+    """Pad variable-length sequences to a fixed length"""
     if not sequences:
         return np.zeros((0, max_len, 0), dtype=np.float32)
 
@@ -594,28 +594,28 @@ def pad_sequences(sequences, max_len=100):
     return padded
 
 # ----------------------
-# 主流程，整体标准化
+# Main Process, Overall Standardization
 # ----------------------
 def Standard_dataset(input_path, output_path, max_len=100):
     try:
         time_features = rate_features = length_features = count_features = []
 
-        # 1. 加载原始数据
+        # 1. Load raw data
         stat_features, packet_sequences, labels = load_jsonl_data(input_path)
-        print("Label 分布：", np.unique(labels, return_counts=True))
+        print("Label distribution:", np.unique(labels, return_counts=True))
 
-        # 2. 展平所有时间步用于预处理
-        print("展平所有时间步...")
+        # 2. Flatten all time steps for preprocessing
+        print("Flattening all time steps...")
         all_time_steps = []
         for seq in tqdm(packet_sequences, desc="Flattening time steps"):
             all_time_steps.extend(seq)
 
-        # 3. 预处理所有时间步特征
+        # 3. Preprocess all time-step features
         processed_steps = preprocess_time_steps(all_time_steps)
 
 
-        # 4. 重新组装为样本序列
-        print("重新组装每条序列...")
+        # 4. Reassemble into sample sequences
+        print("Reassembling each sequence...")
         processed_sequences = []
         pointer = 0
         for seq in tqdm(packet_sequences, desc="Reconstructing sequences"):
@@ -623,27 +623,27 @@ def Standard_dataset(input_path, output_path, max_len=100):
             processed_sequences.append(processed_steps[pointer:pointer + seq_len])
             pointer += seq_len
 
-        # 5. 填充序列
+        # 5. Pad sequences
         padded_sequences = pad_sequences(processed_sequences, max_len)
 
-        # 6. 转换标签
+        # 6. Transform labels
         # labels, label_names = pd.factorize(labels)
         le = LabelEncoder()
         labels = le.fit_transform(labels)
 
-        # 转换为DataFrame并显示进度
-        print("\n正在将统计特征转换为DataFrame...")
+        # Convert to DataFrame and show progress
+        print("\nConverting statistical features to DataFrame...")
         df = pd.DataFrame(stat_features)
 
 
-        # 调试：打印 df.columns 查看实际列名
-        print("\nDataFrame 列名：")
+        # Debug: print df.columns to check actual column names
+        print("\nDataFrame columns:")
         print(df.columns)
 
-        # 处理特征并显示进度
-        print("\n正在处理特征...")
+        # Process features and show progress
+        print("\nProcessing features...")
 
-        # 指定特征分类
+        # Specify feature categories
         time_features = [col for col in df.columns if 'IAT' in col or 'Duration' in col]
         length_features = [col for col in df.columns if 'Length' in col]
         rate_features = [col for col in df.columns if 'Bytes/s' in col or 'Packets/s' in col]
@@ -651,33 +651,33 @@ def Standard_dataset(input_path, output_path, max_len=100):
                           'Count' in col or 'Flag' in col or 'total Fwd' in col or "total Bwd" in col]
         count_features = list(set(count_features) - set(time_features) - set(length_features) - set(rate_features))
 
-        print("  正在应用MinMax缩放...")
-        scaler = MinMaxScaler(feature_range=(0, 1))  # 或 (-1, 1)
+        print("  Applying MinMax scaling...")
+        scaler = MinMaxScaler(feature_range=(0, 1))  # or (-1, 1)
         all_features = time_features + rate_features + length_features + count_features
 
         if all_features:
-            # 关键修改：直接MinMax，跳过log变换
+            # Key change: direct MinMax, skip log transform
             df[all_features] = scaler.fit_transform(df[all_features])
 
-            # 调试检查
-            print("  特征值范围验证:")
-            print(f"  最小值: {df[all_features].min().min():.4f}")
-            print(f"  最大值: {df[all_features].max().max():.4f}")
+            # Debug check
+            print("  Feature value range validation:")
+            print(f"  Minimum value: {df[all_features].min().min():.4f}")
+            print(f"  Maximum value: {df[all_features].max().max():.4f}")
 
         stat_features = df.values
 
-        # 7. 保存为NPZ
-        print("保存到 NPZ 文件...")
+        # 7. Save to NPZ file
+        print("Saving to NPZ file...")
         np.savez_compressed(output_path, stat_features=stat_features, sequences=padded_sequences, labels=labels)
 
-        # 8. 打印统计信息
-        print("\n✅ 处理完成！统计信息：")
-        print(f"- 样本总数：{len(packet_sequences)}")
-        print(f"- 填充后特征维度：{padded_sequences.shape}")
-        print(f"- 标签分布：{dict(zip(*np.unique(labels, return_counts=True)))}")
+        # 8. Print statistics
+        print("\n✅ Processing complete! Statistics:")
+        print(f"- Total number of samples: {len(packet_sequences)}")
+        print(f"- Feature dimension after padding: {padded_sequences.shape}")
+        print(f"- Label distribution: {dict(zip(*np.unique(labels, return_counts=True)))}")
 
     except Exception as e:
-        print(f"发生错误：{e}")
+        print(f"An error occurred: {e}")
         print(f"time_features: {time_features}")
         print(f"rate_features: {rate_features}")
         print(f"length_features: {length_features}")
@@ -685,59 +685,59 @@ def Standard_dataset(input_path, output_path, max_len=100):
 
 
 if __name__ == "__main__":
-    # ========== 主函数入口（示例） ==========
+    # ========== Main function entry point (example) ==========
     # main("/path/to/your/root", "output.jsonl")
 
-    # ========== 单一数据源路径示例 ==========
+    # ========== Single data source path example ==========
     # datapath_list = [
     #     "D:\\USTC-TFC2016-master\\Malware\\"
     # ]
 
-    # ========== 多数据源配置（含注释说明，可按需开启） ==========
+    # ========== Multi-data source configuration (with comments, can be enabled as needed) ==========
     # datapath_list = [
-    #     # 合并后的NUDT移动数据集（未启用）
+    #     # Merged NUDT mobile dataset (not enabled)
     #     # "D:\\NUDT_MobileTraffic\\merge\\"
 
-    #     # USTC流量数据集（Benign 正常流量）
+    #     # USTC traffic dataset (Benign normal traffic)
     #     "D:\\USTC-TFC2016-master\\Benign\\"
 
-    #     # USTC流量数据集（Malware 恶意流量）
+    #     # USTC traffic dataset (Malware malicious traffic)
     #     # ,"D:\\USTC-TFC2016-master\\Malware\\"
 
-    #     # ISCX VPN服务数据集
+    #     # ISCX VPN service dataset
     #     , "D:\\ISCX-VPN-Service\\VPN\\"
     #     , "D:\\ISCX-VPN-Service\\NonVPN\\"
 
-    #     # ISCX VPN应用数据集
+    #     # ISCX VPN application dataset
     #     , "D:\\ISCX-VPN-App\\VPN\\"
     #     , "D:\\ISCX-VPN-App\\NonVPN\\"
 
-    #     # ISCX Tor流量数据集
+    #     # ISCX Tor traffic dataset
     #     , "D:\\ISCX-Tor\\Tor\\"
     #     , "D:\\ISCX-Tor\\NonTor\\"
 
-    #     # CIC-IoT攻击数据（泛洪攻击与RTSP暴力破解）
+    #     # CIC-IoT attack data (Flood attack and RTSP Brute-Force)
     #     , "D:\\CIC_IOT_Dataset2022_Attacks\\Flood\\"
     #     , "D:\\CIC_IOT_Dataset2022_Attacks\\RTSP-Brute-Force\\"
 
-    #     # 跨平台数据集（Android/iOS）
+    #     # Cross-platform dataset (Android/iOS)
     #     , "D:\\CrossPlatform\\android\\"
-    #     , "D:\\CrossPlatform\\ios\\"
+    -     , "D:\\CrossPlatform\\ios\\"
 
-    #     # Datacon2021 Part 1 数据集（样本与真实数据）
+    #     # Datacon2021 Part 1 dataset (sample and real data)
     #     , "D:\\datacon\\datacon2021_eta\\part1\\sample\\"
     #     , "D:\\datacon\\datacon2021_eta\\part1\\real_data\\"
 
-    #     # Datacon2021 Part 2 数据集（训练与测试）
+    #     # Datacon2021 Part 2 dataset (training and test)
     #     , "D:\\datacon\\datacon2021_eta\\part2\\train_data\\"
     #     , "D:\\datacon\\datacon2021_eta\\part2\\train_data\\"
 
-    #     # Datacon通用数据集
+    #     # Datacon general dataset
     #     , "D:\\datacon\\datacon_eta\\train\\"
     #     , "D:\\datacon\\datacon_eta\\test\\"
     # ]
 
-    # ========== 当前使用的数据路径 ==========
+    # ========== Currently used data path ==========
     datapath_list = [
         "D:\\datacon\\datacon2021_eta\\part2\\train_data\\"
     ]
@@ -753,14 +753,5 @@ if __name__ == "__main__":
         Standard_dataset(
             input_path=output,
             output_path=npz_path,
-            max_len=100  # 设置序列最大长度
+            max_len=100  # Set maximum sequence length
         )
-
-
-
-
-
-
-
-
-
