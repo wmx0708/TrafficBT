@@ -1,7 +1,7 @@
 import os
 import torch
 from torch.utils.data import DataLoader, random_split
-from data import NetworkFlowDataset, load_flow_data,TransformerPacketDataset,get_balanced_trans_dataset,get_balanced_masked_bert_dataset
+from data import NetworkFlowDataset, load_flow_data,TransformerPacketDataset,get_balanced_masked_bert_dataset
 from data import balance_and_augment_data,augment_and_balance,CombinedFlowDataset
 from models import TextFeatureExtractor,TransformerClassifier,FusionModel,UnifiedFlowModel
 from trainer import FlowTrainer
@@ -14,7 +14,7 @@ from sklearn.model_selection import train_test_split
 import argparse
 import torch_optimizer as optim
 
-# 配置
+# Configuration
 config = {
     "bert_path": "/root/netgpt/model/pretrained_mlmbert/checkpoint-118479",
     "data_path": "/root/autodl-tmp/data/USTC-TFC2016-master/Malware/",
@@ -26,14 +26,14 @@ config = {
     "fusion_lr":5e-6,
     "epochs": 30,
     "feature_num":28,
-    "target_count":1000,#每个类别设定多少数量
+    "target_count":1000, # Set the number of samples for each class
     "trans_max_epoch":50,
     "text_max_epoch" :20,
     "fusion_max_epoch":10,
     "trans_patience":10,
     "trans_hidden_size":256,
     "fusion_hidden_size":256,
-    "temperature":0.5, #可以在 Cross-Attention 或特征融合后，引入一个温度系数 τ 来缩放 BERT 特征的影响力
+    "temperature":0.5, # A temperature coefficient τ can be introduced after Cross-Attention or feature fusion to scale the influence of BERT features
     "bert_use_multiclassifier":False,
     "use_parallel":False,
     "start_freeze_layer":8,
@@ -43,32 +43,32 @@ config = {
 
 def save_model(model, optimizer,scheduler, epoch, model_name="model.pth",use_parallel = False):
     if use_parallel:
-        """ 保存模型和优化器的状态 """
+        """ Save the state of the model and optimizer """
         checkpoint = {
             'epoch': epoch,
             'model_state_dict': model.module.state_dict(),
             'optimizer_state_dict': optimizer.module.state_dict(),
-            'scheduler_state_dict': scheduler.module.state_dict(),  # ✅ 保存 scheduler
+            'scheduler_state_dict': scheduler.module.state_dict(),  # ✅ Save scheduler
         }
     else:
-        """ 保存模型和优化器的状态 """
+        """ Save the state of the model and optimizer """
         checkpoint = {
             'epoch': epoch,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
-            'scheduler_state_dict': scheduler.state_dict(),  # ✅ 保存 scheduler
+            'scheduler_state_dict': scheduler.state_dict(),  # ✅ Save scheduler
         }
     torch.save(checkpoint, model_name)
     print(f"Model saved to {model_name}")
 
 
 def load_model(model, optimizer,scheduler,device, model_name="model.pth",use_parallel = False):
-    """ 加载模型和优化器的状态 """
+    """ Load the state of the model and optimizer """
     checkpoint = torch.load(model_name)
     model.load_state_dict(checkpoint['model_state_dict'])
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-     #将优化器状态迁移到cuda
+     # Move optimizer state to cuda
     for state in optimizer.state.values():
         for k, v in state.items():
             if isinstance(v, torch.Tensor):
@@ -81,7 +81,7 @@ def main():
     start_epoch = 0
     device = config["device"]
 
-    # 截取这些样本
+    # Load these samples
     data = np.load(config["data_path"]+"/splitcap/all_feature.npz",allow_pickle=True)
     packet_sequences = data["sequences"]
     flow_labels = data["labels"]
@@ -91,26 +91,26 @@ def main():
     # packet_sequence_data = np.load(config["data_path"]+"/splitcap/tcn_feature.npz")
     # packet_sequences = packet_sequence_data["sequences"]
     # packet_labels = packet_sequence_data["labels"]
-    # # 创建标签在 0 到 19 范围内的掩码
+    # # Create a mask for labels in the range 0 to 19
     mask = (packet_labels >= 0) & (packet_labels < 20)
     
     packet_sequences = packet_sequences[mask]
     packet_labels = packet_labels[mask]
     
-    # # 加载 flow-level 统计特征数据
+    # # Load flow-level statistical feature data
     # flow_data = np.load(config["data_path"]+"/all_featueres.npz")
     # flow_features = flow_data["features"]
     # flow_labels = flow_data["labels"]
     flow_features = flow_features[mask]
     flow_labels = flow_labels[mask]
     
-    # 一致性校验（可选）
-    assert (packet_labels == flow_labels).all(), "两个模态的标签不一致"
+    # Consistency check (optional)
+    assert (packet_labels == flow_labels).all(), "Labels of the two modalities are inconsistent"
     
-    # transformer数据集
+    # Transformer dataset
     X1_bal,  y_bal = augment_and_balance(flow_features,flow_labels, target_count=config["target_count"], noise_level=0.01)
     X2_bal,  y_bal = balance_and_augment_data(packet_sequences, packet_labels, config["target_count"], noise_level=0.05, mask_prob=0.1, shuffle_prob=0.1)
-    # 划分训练验证集
+    # Split into training and validation sets
     X1_train, X1_val, X2_train, X2_val, y_train, y_val = train_test_split(
         X1_bal, X2_bal, y_bal, test_size=0.2, stratify=y_bal, random_state=42
     )
@@ -125,11 +125,11 @@ def main():
     samples = [(x,y) for x,y in samples if 0<=y<20]
     bert_y = [y for x,y in samples]
     classes = set(bert_y)
-    assert (packet_labels == bert_y).all(), "两个模态的标签不一致"
+    assert (packet_labels == bert_y).all(), "Labels of the two modalities are inconsistent"
 
-    # bert数据集
+    # BERT dataset
     num_classes = len(classes)
-    if num_classes >= 20:#如果类别数大于20，使用自定义分类器
+    if num_classes >= 20: # If the number of classes is greater than 20, use a custom classifier
         config["bert_use_multiclassifier"] = True
     print(f"Total num classe is {num_classes}")
     
@@ -152,8 +152,8 @@ def main():
     # trans_train_loader = DataLoader(TransformerPacketDataset(tras_train_X, tras_train_y), batch_size=config["batch_size"], shuffle=False)
     # trans_test_loader = DataLoader(TransformerPacketDataset(trans_val_X, trans_val_y), batch_size=config["batch_size"], shuffle=False)
 
-    # 模型初始化
-    #加载bertmodel,transformer model,和fusion model
+    # Model initialization
+    # Load BERT model, Transformer model, and fusion model
     text_model  = TextFeatureExtractor(config["bert_path"], num_classes,config["bert_use_multiclassifier"],dropout_prob = 0.5,start_freeze_layer = config["start_freeze_layer"])
 
     # trans_model = TransformerClassifier(config["feature_num"], num_classes, num_heads=4, num_layers=2, hidden_dim=config["trans_hidden_size"], dropout=0.2)
@@ -161,8 +161,8 @@ def main():
     
     fusion_model = FusionModel(hidden_size=config["fusion_hidden_size"], trans_hidden_size = config["trans_hidden_size"],temperature = config["temperature"],num_classes=num_classes,dropout = 0.3)
 
-    #加载optimizer
-    # 确保优化器只更新可训练参数
+    # Load optimizer
+    # Ensure the optimizer only updates trainable parameters
     optimizer_grouped_parameters = [
     {"params": text_model.bert.bert.encoder.layer[:8].parameters(), "lr": config["text_lr"]/5},
     {"params": text_model.bert.bert.encoder.layer[8:].parameters(), "lr": config["text_lr"]},
@@ -175,7 +175,7 @@ def main():
         lr=config["trans_lr"],
     )
 
-    # # 替换 AdamW 为 RAdam
+    # # Replace AdamW with RAdam
     # fusion_optim = optim.RAdam(
     #     fusion_model.parameters(),
     #     lr=config["fusion_lr"]
@@ -184,7 +184,7 @@ def main():
                 fusion_model.parameters(),
                 lr=config["fusion_lr"]
             )
-    #学习策略
+    # Learning rate scheduler
     num_training_steps = config["epochs"] * len(train_loader)
     num_warmup_steps = int(0.1 * num_training_steps)
 
@@ -211,14 +211,14 @@ def main():
 #     fusion_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
 #     fusion_optim, mode='min', factor=0.5, patience=2, verbose=True
 # )
-    #如果从上一轮开始接着训练
+    # If continuing training from a previous session
     if config["continue_train"]:
         start_epoch,text_model,text_optim,text_scheduler = load_model(text_model, text_optim,text_scheduler, config["device"],model_name = config["data_path"]+"/splitcap/text_model.pth",use_parallel = config["use_parallel"])
         start_epoch,trans_model,trans_optim,trans_scheduler = load_model(trans_model, trans_optim,trans_scheduler, config["device"],model_name = config["data_path"]+"/splitcap/trans_model.pth",use_parallel = config["use_parallel"])
         start_epoch,fusion_model,fusion_optim,fusion_scheduler = load_model(fusion_model, fusion_optim, fusion_scheduler,config["device"],model_name = config["data_path"]+"/splitcap/fusion_model.pth",use_parallel = config["use_parallel"])
-    #如果要使用多GPU训练
+    # If using multiple GPUs for training
     if torch.cuda.device_count() > 1:
-        print(f"使用 {torch.cuda.device_count()} 个 GPU")
+        print(f"Using {torch.cuda.device_count()} GPUs")
         config["use_parallel"] = True
         text_model  = nn.DataParallel(text_model)
         trans_model = nn.DataParallel(trans_model)
@@ -229,7 +229,7 @@ def main():
     fusion_model = fusion_model.to(device)
 
 
-    # 初始化SwanLab实验
+    # Initialize SwanLab experiment
     swanlab.init(
         project = "bert-triformer",
         experiment_name=config["data_path"].split("/")[-3] +"-" +config["data_path"].split("/")[-2],
@@ -238,7 +238,7 @@ def main():
             "device": str(device)
         }
     )
-    #如果接着之前的训练
+    # If continuing from previous training
     if config["continue_train"]:
         trainer = FlowTrainer(num_classes,text_model, trans_model,fusion_model,text_optim,trans_optim,fusion_optim,text_scheduler,trans_scheduler,fusion_scheduler, device,config["use_parallel"],config["start_freeze_layer"],config["use_unfreeze"],swanlab)
         for epoch in range(start_epoch,start_epoch+config["epochs"]):
@@ -264,9 +264,9 @@ def main():
             #         save_model(trans_model, trans_optim, trans_scheduler,epoch, model_name=config["data_path"]+"/splitcap/trans_model.pth",use_parallel = config["use_parallel"])
             #     if fusion_model:
             #         save_model(fusion_model, fusion_optim,fusion_scheduler, epoch, model_name=config["data_path"]+"/splitcap/fusion_model.pth",use_parallel = config["use_parallel"])
-    #如果从头训练
+    # If training from scratch
     else:
-         #如果之前有激活好的bert直接使用
+         # If a previously activated BERT is available, use it directly
         if os.path.exists(config["data_path"]+"/splitcap/fintuned_bert.pth"):
             text_model.load_state_dict(torch.load(config["data_path"]+"/splitcap/fintuned_bert.pth"))
         trainer = FlowTrainer(num_classes,text_model, trans_model,fusion_model,text_optim,trans_optim,fusion_optim,text_scheduler,trans_scheduler,fusion_scheduler, device,config["use_parallel"],config["start_freeze_layer"],config["use_unfreeze"],swanlab)
@@ -321,7 +321,7 @@ if __name__ == "__main__":
     parser.add_argument("--Flood", action="store_true", help="Use Flood Datasets")
     parser.add_argument("--RTSPBruteForce", action="store_true", help="Use RTSPBruteForce Datasets")
     parser.add_argument("--datacon2020", action="store_true", help="Use datacon2020 Datasets")
-    parser.add_argument("--datacon2021part1", action="store_true", help="Use datacon2021part1 Datasets")
+    parser.add_argument("--datacon2011part1", action="store_true", help="Use datacon2021part1 Datasets")
     parser.add_argument("--datacon2021part2", action="store_true", help="Use datacon2021part2 Datasets")
     parser.add_argument("--CrossPlatformandroid", action="store_true", help="Use CrossPlatformandroid Datasets")
     parser.add_argument("--CrossPlatformios", action="store_true", help="Use CrossPlatformios Datasets")
@@ -376,5 +376,3 @@ if __name__ == "__main__":
     if args.NUDT:
         config["data_path"] = "/root/autodl-tmp/data/NUDT/merge/"
     main()
-
-    
